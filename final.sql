@@ -183,7 +183,7 @@ end //
 delimiter ;
 
 -- phần 6 
---câu 1
+-- câu 1
 delimiter //
 
 create procedure sp_check_claim_limit(
@@ -214,8 +214,6 @@ begin
     end if;
 end //
 delimiter ;
-    
     select 'hủy hợp đồng thành công' as result;
 end //
-
 delimiter ;
