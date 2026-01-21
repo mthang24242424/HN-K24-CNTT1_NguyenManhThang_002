@@ -79,50 +79,144 @@ insert into Claim_Processing_Log(Log_ID,Claim_ID,Action_Detail,Recorded_At,Proce
 ('L005','CLM905','Đã thanh toán qua chuyển khoản','2025-02-15 08:30','Accountant_01');
 
 -- cập nhật tăng phí
-update Insurance_Packages
-set Base_Premium = Base_Premium * 1.15
-where Max_Limit > 500000000;
+update insurance_packages
+set base_premium = base_premium * 1.15
+where max_limit > 500000000;
 
--- xóa các nhật ký bồi thường trc ngày
-delete from Claim_Processing_Log
-where Recorded_At < '2025-06-20 00:00:00';
+-- xóa các nhật ký bồi thường trước ngày
+delete from claim_processing_log
+where recorded_at < '2025-06-20 00:00:00';
 
 -- phần 2
 -- câu 1
-select * from Policies
-where status = 'Active' and End_Date > '2025-12-31 23:59:59';
+select * from policies
+where status = 'active' and end_date > '2025-12-31 23:59:59';
 
 -- câu 2
-select Full_Name,Email from Customers
-where Full_Name like 'Hoang%' and Join_Date > '2025-01-01';
+select full_name, email from customers
+where full_name like 'Hoang%' and join_date > '2025-01-01';
 
 -- câu 3
-select * from Claims
-order by Claim_Amount DESC
+select * from claims
+order by claim_amount desc
 limit 3 offset 1;
-
 -- phần 3
 -- câu 1 
-select cus.Full_Name, i.Package_Name, p.Start_Date, c.Claim_Amount from Policies p
-join Customers cus on cus.Customer_ID = p.Customer_ID
-join Insurance_Packages i on i.Package_ID = p.Package_ID
-join Claims c on c.Policy_ID = p.Policy_ID;
+select cus.full_name, i.package_name, p.start_date, c.claim_amount 
+from policies p
+join customers cus on cus.customer_id = p.customer_id
+join insurance_packages i on i.package_id = p.package_id
+join claims c on c.policy_id = p.policy_id;
 
 -- câu 2
-select *from Claims c
-where Status = 'Approved' and Claim_Amount > 50000000;
+select * from claims c
+where status = 'approved' and claim_amount > 50000000;
 
 -- câu 3
+select 
+    ip.package_id,
+    ip.package_name,
+    count(p.policy_id) as soluongkhachhang
+from insurance_packages ip
+left join policies p on ip.package_id = p.package_id
+group by ip.package_id, ip.package_name
+order by soluongkhachhang desc
+limit 1;
 
-
--- phần 4
+-- phần 4 
 -- câu 1
-create index idx_policy_status_date on Policies(Status,Start_Date);
+create index idx_policy_status_date 
+on policies(status, start_date);
 
 -- câu 2
+create view vw_customer_summary as
+select 
+    c.full_name,
+    count(p.policy_id) as soluonghopdong,
+    sum(ip.base_premium) as tongphibaohiemdinhky
+from customers c
+left join policies p on c.customer_id = p.customer_id
+left join insurance_packages ip on p.package_id = ip.package_id
+group by c.customer_id, c.full_name;
 
--- phần 5
+-- phần 5 
 -- câu 1
+delimiter //
 
--- phần 6
--- câu 1
+create trigger trg_after_claim_approved
+after update on claims
+for each row
+begin
+    if new.status = 'approved' and (old.status is null or old.status != 'approved') then
+        insert into claim_processing_log (
+            log_id, 
+            claim_id, 
+            action_detail, 
+            recorded_at, 
+            processor
+        )
+        values (
+concat('l', lpad((select count(*) + 1 from claim_processing_log), 3, '0')),
+            new.claim_id,
+            'payment processed to customer',
+            now(),
+            'system_auto'
+        );
+    end if;
+end //
+
+delimiter ;
+
+-- câu 2
+delimiter //
+
+create trigger trg_before_delete_policy
+before delete on policies
+for each row
+begin
+    if old.status = 'active' then
+        signal sqlstate '45000'
+        set message_text = 'không thể xóa hợp đồng đang ở trạng thái active';
+    end if;
+end //
+
+delimiter ;
+
+-- phần 6 
+--câu 1
+delimiter //
+
+create procedure sp_check_claim_limit(
+    in p_claim_id varchar(10),
+    out p_message varchar(50)
+)
+begin
+    declare v_claim_amount double;
+    declare v_max_limit double;
+    
+    select 
+        c.claim_amount,
+        ip.max_limit
+    into 
+        v_claim_amount,
+        v_max_limit
+    from claims c
+    join policies p on c.policy_id = p.policy_id
+    join insurance_packages ip on p.package_id = ip.package_id
+    where c.claim_id = p_claim_id;
+    
+    if v_claim_amount is null then
+        set p_message = 'claim not found';
+    elseif v_claim_amount > v_max_limit then
+        set p_message = 'exceeded';
+    else
+        set p_message = 'valid';
+    end if;
+end //
+
+delimiter ;
+    
+    select 'hủy hợp đồng thành công' as result;
+end //
+
+delimiter ;
