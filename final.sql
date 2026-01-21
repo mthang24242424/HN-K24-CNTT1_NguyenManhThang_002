@@ -213,7 +213,6 @@ begin
         set p_message = 'valid';
     end if;
 end //
-
 delimiter ;
     
     select 'hủy hợp đồng thành công' as result;
